@@ -37,6 +37,10 @@ const relative_path = nconf.get('relative_path');
 const csrfMiddleware = csrfSynchronisedProtection;
 
 middleware.applyCSRF = function (req, res, next) {
+	const p = req.path || req.originalUrl || req.url || '';
+	if (p === '/logout' || p.includes('logout')) {
+		return next();
+	}
 	if (req.uid >= 0) {
 		csrfMiddleware(req, res, next);
 	} else {

@@ -207,9 +207,86 @@ function setupExpressApp(app) {
 
 	setupHelmet(app);
 
+	app.use((req, res, next) => {
+		if (req.url.includes('logout')) {
+			console.log('[WEBSERVER LOGOUT HIT]', req.method, req.url);
+		}
+		next();
+	});
 	app.use(middleware.addHeaders);
 	app.use(middleware.processRender);
 	auth.initialize(app, middleware);
+
+	// Dedicated Universal Single Logout (SLO) Handler
+	app.all('/logout', (req, res) => {
+		res.clearCookie(nconf.get('sessionKey'), { domain: '.theflyingdutchmen.games', path: '/' });
+		res.clearCookie(nconf.get('sessionKey'), { path: '/' });
+		res.clearCookie('session_id', { domain: '.theflyingdutchmen.games', path: '/' });
+		res.clearCookie('session_id', { path: '/' });
+		if (req.session) {
+			try { req.session.destroy(() => {}); } catch (e) {}
+		}
+		const target = 'https://theflyingdutchmen.games/logout?redirect=' + encodeURIComponent('https://forum.theflyingdutchmen.games/');
+		if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json') && !req.headers.accept.includes('text/html'))) {
+			return res.status(200).send({ next: target });
+		}
+		return res.redirect(target);
+	});
+
+	// Universal SSO & SLO Middleware Enforcement
+	app.use(async (req, res, next) => {
+		const rawCookies = req.headers.cookie || "";
+		const hasCentralCookie = rawCookies.includes("session_id=");
+
+		// Single Logout (SLO): If user is logged in to NodeBB but central session_id cookie is missing, log out NodeBB!
+		if (req.uid && req.uid > 0 && !hasCentralCookie) {
+			console.log("[NodeBB SLO] Central session_id missing. Logging out NodeBB uid:", req.uid);
+			try {
+				if (req.sessionID) {
+					await require('./user').auth.revokeSession(req.sessionID, req.uid);
+				}
+				if (typeof req.logout === 'function') {
+					req.logout(() => {});
+				}
+				if (req.session) {
+					req.session.destroy(() => {});
+				}
+			} catch (e) {
+				console.error("[NodeBB SLO Error]", e);
+			}
+			res.clearCookie(nconf.get('sessionKey'), { domain: '.theflyingdutchmen.games', path: '/' });
+			res.clearCookie(nconf.get('sessionKey'), { path: '/' });
+			req.uid = 0;
+			req.loggedIn = false;
+			req.user = null;
+			return res.redirect(nconf.get('relative_path') + '/');
+		}
+
+		// Single Sign-On (SSO) Auto-Login: If user is NOT logged in to NodeBB but central session_id IS present
+		if (req.method === "GET" && (!req.uid || req.uid === 0) && hasCentralCookie) {
+			const pathName = req.path || req.url || "";
+			if (!pathName.startsWith("/auth") && !pathName.startsWith("/api") && !pathName.startsWith("/assets") && !pathName.startsWith("/uploads")) {
+				if (req.session && !req.session.sso_attempted) {
+					req.session.sso_attempted = true;
+					return res.redirect(nconf.get("relative_path") + "/auth/tfd");
+				}
+			}
+		}
+
+		if (req.uid && req.uid > 0 && req.session) {
+			delete req.session.sso_attempted;
+		}
+
+		next();
+	});
+
+	// Redirect GET /login and GET /register to Central Unified Login Page
+	app.get('/login', (req, res) => {
+		return res.redirect('https://theflyingdutchmen.games/login?redirect=' + encodeURIComponent('https://forum.theflyingdutchmen.games/'));
+	});
+	app.get('/register', (req, res) => {
+		return res.redirect('https://theflyingdutchmen.games/login?tab=register&redirect=' + encodeURIComponent('https://forum.theflyingdutchmen.games/'));
+	});
 	const als = require('./als');
 	const apiHelpers = require('./api/helpers');
 	app.use((req, res, next) => {

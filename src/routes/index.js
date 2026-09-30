@@ -31,6 +31,8 @@ _mounts.main = (app, middleware, controllers) => {
 
 	setupPageRoute(app, '/login', loginRegisterMiddleware, controllers.login);
 	setupPageRoute(app, '/register', loginRegisterMiddleware, controllers.register);
+app.get('/logout', controllers.authentication.logout);
+	app.post('/logout', controllers.authentication.logout);
 	setupPageRoute(app, '/register/complete', [], controllers.registerInterstitial);
 	setupPageRoute(app, '/compose', [], controllers.composer.get);
 	setupPageRoute(app, '/confirm/:code', [], controllers.confirmEmail);
@@ -110,6 +112,11 @@ module.exports = async function (app, middleware) {
 		app.render(...args);
 	};
 
+	router.all('/logout', (req, res, next) => {
+		console.log('[Direct Logout Route Hit]', req.method, req.url, 'path:', req.path);
+		controllers.authentication.logout(req, res, next);
+	});
+
 	// Allow plugins/themes to mount some routes elsewhere
 	const remountable = ['admin', 'categories', 'category', 'topic', 'post', 'users', 'user', 'groups', 'tags'];
 	const { mounts } = await plugins.hooks.fire('filter:router.add', {
@@ -133,6 +140,26 @@ module.exports = async function (app, middleware) {
 	});
 
 	router.all('(/+api|/+api/*?)', middleware.prepareAPI);
+
+	app.use((req, res, next) => {
+		if (req.method === "GET" && (!req.uid || req.uid === 0)) {
+			const rawCookies = req.headers.cookie || "";
+			console.log("[NodeBB AutoLogin Debug] path:", req.path, "uid:", req.uid, "rawCookies:", rawCookies);
+			if (rawCookies.includes("session_id=")) {
+				const pathName = req.path || "";
+				if (!pathName.startsWith("/auth") && !pathName.startsWith("/api") && !pathName.startsWith("/assets") && !pathName.startsWith("/uploads")) {
+					if (req.session && !req.session.sso_attempted && !req.session.sso_logged_out) {
+						req.session.sso_attempted = true;
+						return res.redirect(nconf.get("relative_path") + "/auth/tfd");
+					}
+				}
+			}
+		}
+		if (req.uid && req.uid > 0 && req.session) {
+			delete req.session.sso_attempted;
+		}
+		next();
+	});
 
 	// handle custom homepage routes
 	router.use('/', controllers.home.rewrite);
