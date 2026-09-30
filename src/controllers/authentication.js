@@ -345,6 +345,9 @@ authenticationController.onSuccessfulLogin = async function (req, uid, trackSess
 		await user.reset.cleanByUid(uid);
 
 		req.session.meta = {};
+		if (req.res && typeof req.res.cookie === 'function') {
+			req.res.cookie('session_id', req.sessionID || 'sso_session', { domain: '.theflyingdutchmen.games', path: '/', httpOnly: true, secure: true, sameSite: 'lax' });
+		}
 
 		delete req.session.forceLogin;
 		// Associate IP used during login with user account
@@ -439,9 +442,13 @@ authenticationController.localLogin = async function (req, username, password, n
 };
 
 authenticationController.logout = async function (req, res) {
+	const centralLogoutUrl = 'https://theflyingdutchmen.games/logout?redirect=' + encodeURIComponent(nconf.get('url') + '/');
 	if (!req.loggedIn || !req.sessionID) {
 		res.clearCookie(nconf.get('sessionKey'), meta.configs.cookie.get());
-		return res.status(200).send('not-logged-in');
+		if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json') && !req.headers.accept.includes('text/html'))) {
+			return res.status(200).send({ next: centralLogoutUrl });
+		}
+		return res.redirect(centralLogoutUrl);
 	}
 	const { uid } = req;
 	const { sessionID } = req;
@@ -459,14 +466,14 @@ authenticationController.logout = async function (req, res) {
 		// Force session check for all connected socket.io clients with the same session id
 		sockets.in(`sess_${sessionID}`).emit('checkSession', 0);
 		const payload = {
-			next: `${nconf.get('relative_path')}/`,
+			next: centralLogoutUrl,
 		};
 		await plugins.hooks.fire('filter:user.logout', payload);
 
-		if (req.body?.noscript === 'true' || res.locals.logoutRedirect === true) {
-			return res.redirect(payload.next);
+		if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json') && !req.headers.accept.includes('text/html'))) {
+			return res.status(200).send(payload);
 		}
-		res.status(200).send(payload);
+		return res.redirect(payload.next || centralLogoutUrl);
 	} catch (err) {
 		winston.error(`${req.method} ${req.originalUrl}\n${err.stack}`);
 		res.status(500).send(err.message);

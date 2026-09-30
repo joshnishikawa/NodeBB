@@ -285,7 +285,7 @@ module.exports = function (middleware) {
 		 */
 		const path = req.path.startsWith('/api/') ? req.path.replace('/api', '') : req.path;
 
-		if (meta.config.requireEmailAddress && await requiresEmailConfirmation(req)) {
+		if (req.session && meta.config.requireEmailAddress && await requiresEmailConfirmation(req)) {
 			req.session.registration = {
 				...req.session.registration,
 				uid: req.uid,
@@ -293,7 +293,7 @@ module.exports = function (middleware) {
 			};
 		}
 
-		if (!req.session.hasOwnProperty('registration')) {
+		if (!req.session || !req.session.hasOwnProperty('registration')) {
 			return setImmediate(next);
 		}
 
@@ -305,7 +305,7 @@ module.exports = function (middleware) {
 		}
 
 		// Append user data if present
-		req.session.registration.uid = req.session.registration.uid || req.uid;
+		if (req.session && req.session.registration) { req.session.registration.uid = req.session.registration.uid || req.uid; }
 
 		controllers.helpers.redirect(res, '/register/complete');
 	};

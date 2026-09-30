@@ -168,7 +168,8 @@ Auth.reloadRoutes = async function (params) {
 	router.post('/register/complete', middlewares, controllers.authentication.registerComplete);
 	router.post('/register/abort', middlewares, controllers.authentication.registerAbort);
 	router.post('/login', Auth.middleware.applyCSRF, Auth.middleware.applyBlacklist, controllers.authentication.login);
-	router.post('/logout', Auth.middleware.applyCSRF, controllers.authentication.logout);
+	router.get('/logout', controllers.authentication.logout);
+router.post('/logout', controllers.authentication.logout);
 };
 
 passport.serializeUser((user, done) => {
