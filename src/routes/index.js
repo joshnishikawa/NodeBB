@@ -147,7 +147,7 @@ module.exports = async function (app, middleware) {
 			console.log("[NodeBB AutoLogin Debug] path:", req.path, "uid:", req.uid, "rawCookies:", rawCookies);
 			if (rawCookies.includes("session_id=")) {
 				const pathName = req.path || "";
-				if (!pathName.startsWith("/auth") && !pathName.startsWith("/api") && !pathName.startsWith("/assets") && !pathName.startsWith("/uploads")) {
+				if (!pathName.startsWith("/auth") && !pathName.startsWith("/api") && !pathName.startsWith("/assets") && !pathName.startsWith("/uploads") && !pathName.startsWith("/forum")) {
 					if (req.session && !req.session.sso_attempted && !req.session.sso_logged_out) {
 						req.session.sso_attempted = true;
 						return res.redirect(nconf.get("relative_path") + "/auth/tfd");

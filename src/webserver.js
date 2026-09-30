@@ -217,6 +217,14 @@ function setupExpressApp(app) {
 	app.use(middleware.processRender);
 	auth.initialize(app, middleware);
 
+	// Legacy /forum static assets redirects
+	app.use('/forum/assets', (req, res) => {
+		res.redirect(301, (nconf.get('relative_path') || '') + '/assets' + req.url);
+	});
+	app.use('/forum/uploads', (req, res) => {
+		res.redirect(301, (nconf.get('relative_path') || '') + '/assets/uploads' + req.url);
+	});
+
 	// Dedicated Universal Single Logout (SLO) Handler
 	app.all('/logout', (req, res) => {
 		res.clearCookie(nconf.get('sessionKey'), { domain: '.theflyingdutchmen.games', path: '/' });
@@ -265,7 +273,7 @@ function setupExpressApp(app) {
 		// Single Sign-On (SSO) Auto-Login: If user is NOT logged in to NodeBB but central session_id IS present
 		if (req.method === "GET" && (!req.uid || req.uid === 0) && hasCentralCookie) {
 			const pathName = req.path || req.url || "";
-			if (!pathName.startsWith("/auth") && !pathName.startsWith("/api") && !pathName.startsWith("/assets") && !pathName.startsWith("/uploads")) {
+			if (!pathName.startsWith("/auth") && !pathName.startsWith("/api") && !pathName.startsWith("/assets") && !pathName.startsWith("/uploads") && !pathName.startsWith("/forum")) {
 				if (req.session && !req.session.sso_attempted) {
 					req.session.sso_attempted = true;
 					return res.redirect(nconf.get("relative_path") + "/auth/tfd");
