@@ -142,26 +142,6 @@ module.exports = async function (app, middleware) {
 
 	router.all(/^\/+api(?:\/.*)?$/i, middleware.prepareAPI);
 
-	app.use((req, res, next) => {
-		if (req.method === "GET" && (!req.uid || req.uid === 0)) {
-			const rawCookies = req.headers.cookie || "";
-			console.log("[NodeBB AutoLogin Debug] path:", req.path, "uid:", req.uid, "rawCookies:", rawCookies);
-			if (rawCookies.includes("session_id=")) {
-				const pathName = req.path || "";
-				if (!pathName.startsWith("/auth") && !pathName.startsWith("/api") && !pathName.startsWith("/assets") && !pathName.startsWith("/uploads") && !pathName.startsWith("/forum")) {
-					if (req.session && !req.session.sso_attempted && !req.session.sso_logged_out) {
-						req.session.sso_attempted = true;
-						return res.redirect(nconf.get("relative_path") + "/auth/tfd");
-					}
-				}
-			}
-		}
-		if (req.uid && req.uid > 0 && req.session) {
-			delete req.session.sso_attempted;
-		}
-		next();
-	});
-
 	// handle custom homepage routes
 	router.use('/', controllers.home.rewrite);
 

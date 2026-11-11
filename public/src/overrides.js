@@ -189,7 +189,13 @@ if (typeof window !== 'undefined') {
 			const style = document.createElement('style');
 			style.id = 'tfd-forum-nav-layout';
 			style.textContent = [
-				'.brand-container { display: none !important; }',
+				'.brand-container,',
+				'[component="user/logout"],',
+				'#user-control-list li.dropdown-divider:has(+ [component="user/logout"]),',
+				'#logged-out-menu li:has(a[href*="/login"]),',
+				'#logged-out-menu li:has(a[href*="/register"]) {',
+				'  display: none !important;',
+				'}',
 				'@media (min-width: 992px) {',
 				'  body:has(#tfd-navbar:not(.tfd-nav-hidden)) .sidebar-left.sticky-top,',
 				'  body:has(#tfd-navbar:not(.tfd-nav-hidden)) .sidebar-right.sticky-top {',

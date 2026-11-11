@@ -381,9 +381,6 @@ authenticationController.onSuccessfulLogin = async function (req, uid, trackSess
 			delete req.session.meta.reAuthAt;
 		}
 		// Safety net: clear forceLogin if it somehow survived (e.g., from SSO paths)
-		if (req.res && typeof req.res.cookie === 'function') {
-			req.res.cookie('session_id', req.sessionID || 'sso_session', { domain: '.theflyingdutchmen.games', path: '/', httpOnly: true, secure: true, sameSite: 'lax' });
-		}
 		delete req.session.forceLogin;
 		// Associate IP used during login with user account
 		req.session.meta.ip = req.ip;

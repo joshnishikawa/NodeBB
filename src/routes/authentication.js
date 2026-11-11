@@ -157,7 +157,11 @@ Auth.reloadRoutes = async function (params) {
 					return next(err);
 				}
 
-				helpers.redirect(res, strategy.successUrl || '/');
+				const nextUrl = (req.session && req.session.next) || strategy.successUrl || '/';
+				if (req.session) {
+					delete req.session.next;
+				}
+				helpers.redirect(res, nextUrl);
 			});
 		});
 	});
