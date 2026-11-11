@@ -137,4 +137,41 @@ if (typeof window !== 'undefined') {
 			timeagoFn.apply(this, arguments);
 		};
 	};
+
+	require(['composer/formatting', 'composer/controls'], function (formatting, controls) {
+		function applyListOverride() {
+			if (!formatting || !controls) {
+				return;
+			}
+			const listHandler = function (textarea, selectionStart, selectionEnd) {
+				if (selectionStart === selectionEnd) {
+					controls.insertIntoTextarea(textarea, '* ');
+					controls.updateTextareaSelection(textarea, selectionStart + 2, selectionStart + 2);
+				} else {
+					const selectedText = $(textarea).val().substring(selectionStart, selectionEnd);
+					const newText = '* ' + selectedText.split('\n').join('\n* ');
+					controls.replaceSelectionInTextareaWith(textarea, newText);
+					controls.updateTextareaSelection(
+						textarea, selectionStart + 2, selectionEnd + (newText.length - selectedText.length)
+					);
+				}
+			};
+
+			const origAddButtonDispatch = formatting.addButtonDispatch;
+			formatting.addButtonDispatch = function (name, onClick) {
+				if (name === 'list') {
+					onClick = listHandler;
+				}
+				return origAddButtonDispatch.call(this, name, onClick);
+			};
+
+			const table = formatting.getDispatchTable ? formatting.getDispatchTable() : null;
+			if (table) {
+				table.list = listHandler;
+			}
+		}
+
+		applyListOverride();
+		$(window).on('action:composer.enhanced', applyListOverride);
+	});
 }
