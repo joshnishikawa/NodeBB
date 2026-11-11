@@ -157,9 +157,10 @@ Auth.reloadRoutes = async function (params) {
 					return next(err);
 				}
 
-				const nextUrl = (req.session && req.session.next) || strategy.successUrl || '/';
+				const nextUrl = (req.session && (req.session.next || req.session.returnTo)) || strategy.successUrl || '/';
 				if (req.session) {
 					delete req.session.next;
+					delete req.session.returnTo;
 				}
 				helpers.redirect(res, nextUrl);
 			});

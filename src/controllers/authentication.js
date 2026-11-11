@@ -358,8 +358,9 @@ authenticationController.onSuccessfulLogin = async function (req, uid, trackSess
 	 * called in NodeBB core. However, if already called, return prematurely
 	 * only if the user is logging in as themselves and not forcing a reauth.
 	 */
+	const isForceLogin = !!(wasForceLogin || (req.session && req.session.forceLogin));
 	const isSelfRelogin = req.loggedIn && parseInt(req.uid, 10) === parseInt(uid, 10);
-	if (isSelfRelogin && !req.session.forceLogin && !wasForceLogin) {
+	if (isSelfRelogin && !isForceLogin) {
 		return true;
 	}
 
@@ -373,12 +374,10 @@ authenticationController.onSuccessfulLogin = async function (req, uid, trackSess
 		await user.bans.unbanIfExpired([uid]);
 		await user.reset.cleanByUid(uid);
 
-		req.session.meta = {};
+		req.session.meta = req.session.meta || {};
 		const now = Date.now();
-		if (wasForceLogin) {
+		if (isForceLogin) {
 			req.session.meta.reAuthAt = now;
-		} else {
-			delete req.session.meta.reAuthAt;
 		}
 		// Safety net: clear forceLogin if it somehow survived (e.g., from SSO paths)
 		delete req.session.forceLogin;
