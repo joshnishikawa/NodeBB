@@ -174,4 +174,57 @@ if (typeof window !== 'undefined') {
 		applyListOverride();
 		$(window).on('action:composer.enhanced', applyListOverride);
 	});
+
+	(function initTFDForumNavbar() {
+		if (window.location.pathname.startsWith('/admin')) {
+			return;
+		}
+		if (!document.querySelector('link[href*="tfd-nav.css"]')) {
+			const link = document.createElement('link');
+			link.rel = 'stylesheet';
+			link.href = 'https://theflyingdutchmen.games/stylesheets/tfd-nav.css';
+			document.head.appendChild(link);
+		}
+		if (!document.getElementById('tfd-forum-nav-layout')) {
+			const style = document.createElement('style');
+			style.id = 'tfd-forum-nav-layout';
+			style.textContent = [
+				'.brand-container { display: none !important; }',
+				'@media (min-width: 992px) {',
+				'  body:has(#tfd-navbar:not(.tfd-nav-hidden)) .sidebar-left.sticky-top,',
+				'  body:has(#tfd-navbar:not(.tfd-nav-hidden)) .sidebar-right.sticky-top {',
+				'    top: 48px !important;',
+				'    height: calc(100vh - 48px) !important;',
+				'  }',
+				'}',
+				'@media (max-width: 991.98px) {',
+				'  body:has(#tfd-navbar:not(.tfd-nav-hidden)) [component="bottombar"].sticky-top {',
+				'    top: 48px !important;',
+				'  }',
+				'}',
+			].join('\n');
+			document.head.appendChild(style);
+		}
+		function mountNavbar() {
+			if (!document.getElementById('tfd-navbar')) {
+				const nav = document.createElement('header');
+				nav.id = 'tfd-navbar';
+				nav.className = 'tfd-navbar';
+				nav.setAttribute('data-active', 'forum');
+				document.body.prepend(nav);
+			}
+			if (window.initTFDNavbar && !window.tfdNavbarInstance) {
+				window.tfdNavbarInstance = window.initTFDNavbar({ active: 'forum' });
+			} else if (!document.querySelector('script[src*="tfd-navbar.js"]')) {
+				const script = document.createElement('script');
+				script.src = 'https://theflyingdutchmen.games/javascripts/tfd-navbar.js';
+				document.head.appendChild(script);
+			}
+		}
+		if (document.body) {
+			mountNavbar();
+		} else {
+			document.addEventListener('DOMContentLoaded', mountNavbar);
+		}
+	})();
 }
