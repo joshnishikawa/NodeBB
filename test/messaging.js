@@ -12,6 +12,7 @@ const meta = require('../src/meta');
 const User = require('../src/user');
 const Groups = require('../src/groups');
 const Messaging = require('../src/messaging');
+const plugins = require('../src/plugins');
 const api = require('../src/api');
 const helpers = require('./helpers');
 const request = require('../src/request');
@@ -941,6 +942,37 @@ describe('Messaging Library', () => {
 			assert.strictEqual(body.status.message, 'This chat message has already been restored.');
 		});
 
+		it('should reduce messageCount property of chat room when a message is purged', async () => {
+			const { body: roomBody } = await callv3API('post', '/chats', {
+				uids: [mocks.users.baz.uid],
+			}, 'foo');
+			const purgeRoomId = roomBody.response.roomId;
+
+			// Send 3 messages
+			const { body: msg1 } = await callv3API('post', `/chats/${purgeRoomId}`, {
+				roomId: purgeRoomId, message: 'message one',
+			}, 'foo');
+			const { body: msg2 } = await callv3API('post', `/chats/${purgeRoomId}`, {
+				roomId: purgeRoomId, message: 'message two',
+			}, 'foo');
+			const { body: msg3 } = await callv3API('post', `/chats/${purgeRoomId}`, {
+				roomId: purgeRoomId, message: 'message three',
+			}, 'foo');
+
+			const mids = [msg1.response.messageId, msg2.response.messageId, msg3.response.messageId];
+
+			// Verify messageCount is 3
+			let msgCount = await db.getObjectField(`chat:room:${purgeRoomId}`, 'messageCount');
+			assert.strictEqual(parseInt(msgCount, 10), 3);
+
+			// Purge one message
+			await Messaging.purgeMessage(mids[1]);
+
+			// Verify messageCount is now 2
+			msgCount = await db.getObjectField(`chat:room:${purgeRoomId}`, 'messageCount');
+			assert.strictEqual(parseInt(msgCount, 10), 2);
+		});
+
 		describe('disabled via ACP', () => {
 			before(async () => {
 				meta.config.disableChatMessageEditing = true;
@@ -1023,6 +1055,34 @@ describe('Messaging Library', () => {
 			assert.equal(response.statusCode, 200);
 			assert.equal(response.headers['x-redirect'], encodeURIComponent('/user/herp/chats'));
 			assert.equal(body, '/user/herp/chats');
+		});
+
+		it('should search the chats of the uid passed in', async () => {
+			const method = async (data) => {
+				data.canGet = true;
+				return data;
+			};
+			plugins.hooks.register('test', { hook: 'filter:messaging.canGetRecentChats', method });
+			try {
+				const query = 'ba';
+				const [ownRooms, fooRooms] = await Promise.all([
+					Messaging.searchRecentChats(mocks.users.herp.uid, mocks.users.herp.uid, query),
+					Messaging.searchRecentChats(mocks.users.foo.uid, mocks.users.foo.uid, query),
+				]);
+				const { body } = await request.get(`${nconf.get('url')}/api/v3/chats/search?query=${query}&uid=${mocks.users.foo.uid}`, { jar });
+
+				const roomIds = body.response.rooms.map(room => room.roomId);
+				assert.deepStrictEqual(roomIds, fooRooms.rooms.map(room => room.roomId));
+				assert.notDeepStrictEqual(roomIds, ownRooms.rooms.map(room => room.roomId));
+			} finally {
+				plugins.hooks.unregister('test', 'filter:messaging.canGetRecentChats', method);
+			}
+		});
+
+		it('should not search the chats of another user without privileges', async () => {
+			const { response } = await request.get(`${nconf.get('url')}/api/v3/chats/search?query=ba&uid=${mocks.users.foo.uid}`, { jar });
+
+			assert.notStrictEqual(response.statusCode, 200);
 		});
 
 		it('should return 404 if user is not in room', async () => {

@@ -13,6 +13,7 @@ const plugins = require('../plugins');
 const authRoutes = require('./authentication');
 const writeRoutes = require('./write');
 const helpers = require('./helpers');
+const utils = require('../utils');
 
 const { setupPageRoute } = helpers;
 
@@ -139,7 +140,7 @@ module.exports = async function (app, middleware) {
 		}
 	});
 
-	router.all('(/+api|/+api/*?)', middleware.prepareAPI);
+	router.all(/^\/+api(?:\/.*)?$/i, middleware.prepareAPI);
 
 	app.use((req, res, next) => {
 		if (req.method === "GET" && (!req.uid || req.uid === 0)) {
@@ -164,9 +165,7 @@ module.exports = async function (app, middleware) {
 	// handle custom homepage routes
 	router.use('/', controllers.home.rewrite);
 
-	router.all(`(/+api/admin|/+api/admin/*?${mounts.admin !== 'admin' ? `|/+api/${mounts.admin}|/+api/${mounts.admin}/*?` : ''})`, middleware.authenticateRequest, middleware.ensureLoggedIn, middleware.admin.checkPrivileges);
-	router.all(`(/+admin|/+admin/*?${mounts.admin !== 'admin' ? `|/+${mounts.admin}|/+${mounts.admin}/*?` : ''})`, middleware.ensureLoggedIn, middleware.applyCSRF, middleware.admin.checkPrivileges);
-
+	addAdminRoutePrivChecks(router, middleware, mounts);
 
 	app.use(middleware.stripLeadingSlashes);
 
@@ -180,6 +179,33 @@ module.exports = async function (app, middleware) {
 
 	winston.info('[router] Routes added');
 };
+
+function addAdminRoutePrivChecks(router, middleware, mounts) {
+	function getAdminRouteRegex(prefix, mount) {
+		const paths = [`/+${prefix}`, `/+${prefix}/.*`];
+
+		if (mount !== 'admin') {
+			const escapedMount = utils.escapeRegexChars(mount);
+			paths.push(`/+${escapedMount}`, `/+${escapedMount}/.*`);
+		}
+
+		return new RegExp(`^(?:${paths.join('|')})$`, 'i');
+	}
+
+	router.all(
+		getAdminRouteRegex('api/admin', mounts.admin),
+		middleware.authenticateRequest,
+		middleware.ensureLoggedIn,
+		middleware.admin.checkPrivileges
+	);
+
+	router.all(
+		getAdminRouteRegex('admin', mounts.admin),
+		middleware.ensureLoggedIn,
+		middleware.applyCSRF,
+		middleware.admin.checkPrivileges
+	);
+}
 
 function addCoreRoutes(app, router, middleware, mounts) {
 	_mounts.meta(router, middleware, controllers);

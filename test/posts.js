@@ -1097,6 +1097,17 @@ describe('Post\'s', () => {
 			assert(!Object.hasOwn(posts[0].data, 'req'));
 		});
 
+		it('should load queued posts for a category moderator', async () => {
+			const modUid = await user.create({ username: 'queuecatmod', password: 'queuecatmodpwd' });
+			await privileges.categories.give(['moderate'], cid, modUid);
+			const { jar: modJar } = await helpers.loginUser('queuecatmod', 'queuecatmodpwd');
+			const { body } = await request.get(`${nconf.get('url')}/api/post-queue`, { jar: modJar });
+			const ids = body.posts.map(p => p.id);
+			assert(ids.includes(topicQueueId));
+			assert(ids.includes(queueId));
+			await privileges.categories.rescind(['moderate'], cid, modUid);
+		});
+
 		it('should error if data is invalid', async () => {
 			await assert.rejects(
 				apiPosts.editQueuedPost({ uid: globalModUid }, null),
@@ -1127,6 +1138,22 @@ describe('Post\'s', () => {
 			assert.equal(posts[0].type, 'topic');
 			assert.equal(posts[0].data.cid, 2);
 			await apiPosts.editQueuedPost({ uid: globalModUid }, { id: topicQueueId, cid: cid });
+		});
+
+
+		it('should fail to approve self post', async () => {
+			const { id, queued} = await apiTopics.create({ uid: uid }, { title: 'should be queued', content: 'queued topic content', cid });
+			assert.strictEqual(queued, true);
+
+			await assert.rejects(
+				apiPosts.acceptQueuedPost({ uid: uid }, { id: id }),
+				{ message: '[[error:no-post]]' },
+			);
+			await apiPosts.editQueuedPost({ uid: uid }, { id: id, cid: [2] });
+			await assert.rejects(
+				apiPosts.acceptQueuedPost({ uid: uid }, { id: id }),
+				{ message: '[[error:no-post]]' },
+			);
 		});
 
 		it('should prevent regular users from approving posts', async () => {

@@ -55,20 +55,34 @@ const maxSockets = 64; // total sockets across all hosts
 const maxConnections = 256; // allow connection reuse above maxSockets
 const connectionsPerHost = 10; // per-server connection limit
 
-const dispatcher = new NodeBBAgent({
-	maxSockets,
-	maxConnections,
-	connections: connectionsPerHost,
-	allowH2: true,
-	pipelining: 1,
-	connect: {
-		lookup,
-		rejectUnauthorized: !isDevOrTest,
-	},
-});
-const manualDispatcher = new Dispatcher1Wrapper(dispatcher);
+function createDispatcher(rejectUnauthorized) {
+	const agent = new NodeBBAgent({
+		maxSockets,
+		maxConnections,
+		connections: connectionsPerHost,
+		allowH2: true,
+		pipelining: 1,
+		connect: {
+			lookup,
+			rejectUnauthorized,
+		},
+	});
+	return new Dispatcher1Wrapper(agent);
+}
 
-async function call(url, method, { body, timeout, jar, sizeLimit = 10 * 1024 * 1024, ...config } = {}) {
+const manualDispatcher = createDispatcher(!isDevOrTest);
+
+let insecureDispatcher = null;
+function getInsecureDispatcher() {
+	if (!insecureDispatcher) {
+		insecureDispatcher = createDispatcher(false);
+	}
+	return insecureDispatcher;
+}
+
+async function call(url, method, {
+	body, timeout, jar, sizeLimit = 10 * 1024 * 1024, rejectUnauthorized, binary = false, ...config
+} = {}) {
 	const originalUrl = url;
 	let currentUrl = url;
 	let redirectCount = 0; // Add redirect counter
@@ -99,7 +113,7 @@ async function call(url, method, { body, timeout, jar, sizeLimit = 10 * 1024 * 1
 			},
 			signal: timeout > 0 ? AbortSignal.timeout(timeout) : undefined,
 			size: sizeLimit,
-			dispatcher: manualDispatcher,
+			dispatcher: rejectUnauthorized === false ? getInsecureDispatcher() : manualDispatcher,
 		};
 		if (body instanceof FormData) {
 			// If body is FormData, let fetch handle the content-type header
@@ -151,6 +165,20 @@ async function call(url, method, { body, timeout, jar, sizeLimit = 10 * 1024 * 1
 			throw new Error(`Response size (${buffer.byteLength} bytes) exceeds limit (${sizeLimit} bytes)`);
 		}
 
+		if (binary) {
+			return {
+				body: Buffer.from(buffer),
+				response: {
+					ok: response.ok,
+					status: response.status,
+					statusCode: response.status,
+					statusText: response.statusText,
+					headers: Object.fromEntries(response.headers.entries()),
+				},
+				url: currentUrl,
+			};
+		}
+
 		let respBody = new TextDecoder().decode(buffer);
 
 		if (isJSON && respBody) {
@@ -196,6 +224,7 @@ const { body, response } = await request.get('someurl?foo=1&baz=2')
 exports.check = check;
 
 exports.get = async (url, config) => call(url, 'GET', config);
+exports.getBuffer = async (url, config) => call(url, 'GET', { ...config, binary: true });
 
 exports.head = async (url, config) => call(url, 'HEAD', config);
 exports.del = async (url, config) => call(url, 'DELETE', config);

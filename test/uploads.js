@@ -17,6 +17,7 @@ const socketUser = require('../src/socket.io/user');
 const helpers = require('./helpers');
 const file = require('../src/file');
 const image = require('../src/image');
+const uploads = require('../src/middleware/uploads');
 const request = require('../src/request');
 
 const emptyUploadsFolder = async () => {
@@ -101,6 +102,19 @@ describe('Upload Controllers', () => {
 			assert(Array.isArray(body.response.images));
 			assert(body.response.images[0].url);
 			assert.deepStrictEqual(Object.keys(body.response.images[0]), ['url', 'name']);
+		});
+
+		it('should upload an image with -resized.png in its filename', async () => {
+			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/post/upload`, path.join(__dirname, '../test/files/test-resized.png'), {}, jar, csrf_token);
+			assert.equal(response.statusCode, 200);
+			const image = body.response.images[0];
+			// image name is unchanged
+			assert.strictEqual(image.name, 'test-resized.png');
+			// saved file has no -resized at the end ie test-resized.png becomes test.png
+			assert(image.url.endsWith('-test.png'));
+			// user record doesn't have -resized at the end
+			const [userUpload] = await db.getSortedSetRevRange(`uid:${regularUid}:uploads`, 0, 0);
+			assert(image.url.endsWith(userUpload), userUpload);
 		});
 
 		it('should upload an svg image to a post', async () => {
@@ -783,6 +797,41 @@ describe('Upload Controllers', () => {
 		});
 
 		after(emptyUploadsFolder);
+	});
+
+	describe('middleware.setSafeFileHeaders()', () => {
+		function mockRes() {
+			const headers = {};
+			return {
+				headers,
+				setHeader(name, value) {
+					headers[name.toLowerCase()] = value;
+					return this;
+				},
+				attachment(filename) {
+					this.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+					return this;
+				},
+			};
+		}
+
+		it('should always set X-Content-Type-Options: nosniff', () => {
+			const res = mockRes();
+			uploads.setSafeFileHeaders(res, 'test.png');
+			assert.strictEqual(res.headers['x-content-type-options'], 'nosniff');
+		});
+
+		it('should force a download for unsafe extensions (SVG)', () => {
+			const res = mockRes();
+			uploads.setSafeFileHeaders(res, 'pwn.svg');
+			assert.strictEqual(res.headers['content-disposition'], 'attachment; filename="pwn.svg"');
+		});
+
+		it('should not force a download for safe image extensions', () => {
+			const res = mockRes();
+			uploads.setSafeFileHeaders(res, 'test.png');
+			assert.strictEqual(res.headers['content-disposition'], undefined);
+		});
 	});
 
 	describe('library methods', () => {

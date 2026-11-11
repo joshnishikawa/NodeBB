@@ -21,6 +21,13 @@ const sockets = require('../socket.io');
 const authenticationController = module.exports;
 
 async function registerAndLoginUser(req, res, userData) {
+	// Never trust a client-supplied uid; only the session's own uid is valid
+	if (req.uid) {
+		userData.uid = req.uid;
+	} else {
+		delete userData.uid;
+	}
+
 	if (!userData.hasOwnProperty('email')) {
 		userData.updateEmail = true;
 	}
@@ -249,11 +256,8 @@ authenticationController.login = async (req, res, next) => {
 		const isUsernameLogin = loginWith.includes('username') && !validator.isEmail(req.body.username);
 		if (isEmailLogin) {
 			const username = await user.getUsernameByEmail(req.body.username);
-			if (username !== '[[global:guest]]') {
-				req.body.username = username;
-			} else {
-				return errorHandler(req, res, '[[error:invalid-email]]', 400);
-			}
+			// if no username, pass in dummy username for login purposes, otherwise oracle 🔮 if returning early here
+			req.body.username = (username && username !== '[[global:guest]]') ? username : '__dummy__';
 		}
 		if (isEmailLogin || isUsernameLogin) {
 			continueLogin(strategy, req, res, next);
@@ -303,13 +307,7 @@ function continueLogin(strategy, req, res, next) {
 			const code = await user.reset.generate(userData.uid);
 			(res.locals.redirectAfterLogin || redirectAfterLogin)(req, res, `${nconf.get('relative_path')}/reset/${code}`);
 		} else {
-			delete req.query.lang;
-			// Capture whether this is a forced re-login before clearing forceLogin.
-			// We clear forceLogin BEFORE doLogin so that passport's session
-			// regenerate + merge doesn't carry the stale flag into the new session.
-			const wasForceLogin = !!req.session.forceLogin;
-			delete req.session.forceLogin;
-			await authenticationController.doLogin(req, userData.uid, wasForceLogin);
+			await authenticationController.doLogin(req, userData.uid);
 			let destination;
 			if (req.session.returnTo) {
 				destination = req.session.returnTo.startsWith('http') ?
@@ -337,10 +335,15 @@ function redirectAfterLogin(req, res, destination) {
 	}
 }
 
-authenticationController.doLogin = async function (req, uid, wasForceLogin) {
+authenticationController.doLogin = async function (req, uid) {
 	if (!uid) {
 		return;
 	}
+	// Capture whether this is a forced re-login before clearing forceLogin.
+	// We clear forceLogin BEFORE doLogin so that passport's session
+	// regenerate + merge doesn't carry the stale flag into the new session.
+	const wasForceLogin = !!req.session.forceLogin;
+	delete req.session.forceLogin;
 	const isSelf = parseInt(req.uid, 10) === parseInt(uid, 10);
 	const loginAsync = util.promisify(req.login).bind(req);
 	const keepSessionInfo = (req?.res?.locals?.reroll !== false) && (!req.loggedIn || isSelf);
@@ -418,25 +421,29 @@ const destroyAsync = util.promisify((req, callback) => req.session.destroy(callb
 const logoutAsync = util.promisify((req, callback) => req.logout(callback));
 
 authenticationController.localLogin = async function (req, username, password, next) {
-	if (!username) {
-		return next(new Error('[[error:invalid-username]]'));
-	}
-
-	if (!password || !utils.isPasswordValid(password)) {
-		return next(new Error('[[error:invalid-password]]'));
-	}
-
-	if (password.length > 512) {
-		return next(new Error('[[error:password-too-long]]'));
-	}
-
-	const userslug = slugify(username);
-	if (!utils.isUserNameValid(username) || !userslug) {
-		return next(new Error('[[error:invalid-username]]'));
-	}
-
-	const uid = await user.getUidByUserslug(userslug);
 	try {
+		if (!username) {
+			throw new Error('[[error:invalid-username]]');
+		}
+
+		if (!password || !utils.isPasswordValid(password)) {
+			throw new Error('[[error:invalid-password]]');
+		}
+
+		if (password.length > 512) {
+			throw new Error('[[error:password-too-long]]');
+		}
+
+		const userslug = slugify(username);
+		if (!utils.isUserNameValid(username) || !userslug) {
+			throw new Error('[[error:invalid-username]]');
+		}
+
+		const uid = await user.getUidByUserslug(userslug);
+		if (!parseInt(uid, 10) && await user.isRegistrationPending(username, password, req.ip)) {
+			throw new Error('[[error:registration-pending]]');
+		}
+
 		const [userData, isAdminOrGlobalMod, canLoginIfBanned] = await Promise.all([
 			user.getUserFields(uid, ['uid', 'passwordExpiry']),
 			user.isAdminOrGlobalMod(uid),
